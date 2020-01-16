@@ -1,3 +1,53 @@
+#' Before we start with our workshop, I think presenting what we can achive with DALEX is beneficial. For that purpose I will 
+#' use fifa19 dataset
+
+library("DALEX")
+library("readr")
+fifa19 <- as.data.frame(read_csv("fifa19.csv"))
+
+fifa19$Value <- substr(fifa19$Value,2,200)
+fifa19$ValueNum <- sapply(as.character(fifa19$Value), function(x) {
+  unit <- substr(x, nchar(x), nchar(x))
+  if (unit == "M") return (as.numeric(substr(x, 1, nchar(x)-1)) * 1000000)
+  if (unit == "K") return (as.numeric(substr(x, 1, nchar(x)-1)) * 1000)
+  as.numeric(x)
+})
+
+rownames(fifa19) <- make.names(fifa19$Name, unique = TRUE)
+fifa19_selected <- fifa19[1:5000,c(4,8,14:18,55:88,90)]
+fifa19_selected$`Preferred Foot` <- factor(fifa19_selected$`Preferred Foot`)
+fifa19_selected$ValueNum <- sqrt(fifa19_selected$ValueNum)
+
+fifa19_selected <- na.omit(fifa19_selected)
+colnames(fifa19_selected) <- make.names(colnames(fifa19_selected))
+
+library("gbm")
+fifa_gbm <- gbm(ValueNum~.-Overall, data = fifa19_selected, n.trees = 250, interaction.depth = 3)
+predict_fifa <- function(X.model, newdata) {
+  (predict(X.model, newdata, n.trees = 250))^2
+}
+
+explainer_fifa <- explain(fifa_gbm, data = fifa19_selected[,-42], y = (fifa19_selected$ValueNum)^2, predict_function = predict_fifa)
+library("ingredients")
+fifa_feat <- ingredients::feature_importance(explainer_fifa)
+plot(fifa_feat, max_vars = 12)
+
+fifa19_pd <- ingredients::partial_dependency(explainer_fifa, variables = "Age")
+plot(fifa19_pd)
+
+library("iBreakDown")
+fifa_pg_gbm <- break_down(explainer_fifa, new_observation = fifa19_selected["P..Gulácsi",])
+fifa_pg_gbm$label = "Break Down for Péter Gulácsi (GBM model)"
+
+library("ggplot2")
+library("scales")
+plot(fifa_pg_gbm, digits = 0) +
+  scale_y_continuous(labels = dollar_format(suffix = "€", prefix = ""), 
+                     name = "Estimated value", limits = 1000000*c(2,13), 
+                     breaks = 1000000*c(2.5,5,7.5,10))
+
+
+
 #' No. 1
 #' In that part I would like to answer the question why do we need wrapper over models based on simple example. On the top of that
 #' we will create some models in order to use them in further sections. Please ask questions when You meet any problem with either
@@ -37,18 +87,18 @@ p_ranger$predictions
 
 
 #' No. 2
-#' Therefore we need wrapper over models, that will allow as to use any machine learning model in the say way and therefore perform 
+#' Therefore we need wrapper over models, that will allow as to use any machine learning model in the say way and then perform 
 #' the same computations for any type of task. 
 
 explainer_ranger_titanic <- explain(model_ranger_classif_titanic, data = data, y = data$survived)
 
 #' As we can see there is plenty of warnings, let's try to solve them.
-#' First of all, it is nor recommended to have `y` in `data`. The reason is that some of the applications may not work properly.
+#' First of all, it is not recommended to have `y` in `data`. The reason is that some of the applications may not work properly.
 #' Today we will not have occasion to meet that problem, but I put it here for purpose of good practice.
 
 explainer_ranger_titanic <- explain(model_ranger_classif_titanic, data = data[,-8], y = data$survived)
 
-#' Warning about `y` being a facor is way more important. We have to way to solv that problem. First is presented below, second 
+#' Warning about `y` being a facor is way more important. We have to way to solve that problem. First is presented below, second 
 #' is connected to residual function and we will see it later. Keep in mind that `y` parameter is just a vector. Changing it
 #' does not affect original data at all.
 
@@ -235,6 +285,17 @@ plot_data_regr <- funnel_measure(explainer_lm, explainer_rf,
                             nbins = 5,
                             measure_function = DALEX::loss_root_mean_square)
 
+partition_data = data.frame("Total price" = apartments$m2.price*apartments$surface, 
+                       "Customer score" = apartments$construction.year/apartments$floor)
+
+plot_data_regr_external <- funnel_measure(explainer_lm, explainer_rf,
+                                 nbins = 5,
+                                 partition_data = cbind(partition_data, apartmentsTest[,1:4]),
+                                 measure_function = DALEX::loss_root_mean_square)
+
+plot(plot_data_regr_external)
+
+
 plot_data_classif <- funnel_measure(explainer_mlr_dalextra, explainer_mlr_dalextra_svm,
                                     nbins = 5,
                                     measure_function = DALEX::loss_one_minus_auc)
@@ -250,4 +311,14 @@ plot(training_test)
 #' Create report using champion_challenger function
 
 
-#' No. 7 Integracja
+#' No. 7 Integration
+
+#' Oral explanation is crucial here :) 
+library("DALEXtra")
+
+titanic_test <- read.csv(system.file("extdata", "titanic_test.csv", package = "DALEXtra"))
+
+explainer <- explain_scikitlearn(system.file("extdata", "scikitlearn.pkl", package = "DALEXtra"),
+                                 yml = system.file("extdata", "testing_environment.yml", package = "DALEXtra"),
+                                 data = titanic_test[,1:17], y = titanic_test$survived)
+
