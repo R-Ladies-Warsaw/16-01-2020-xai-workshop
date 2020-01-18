@@ -7,7 +7,10 @@ install.packages(c("DALEX",
                    "modelStudio",
                    "mlr",
                    "ranger",
-                   "e1071"))
+                   "e1071", 
+                   "readr", 
+                   "randomForest",
+                   "kernlab"))
 
 devtools::install_github("ModelOriented/DALEXtra")
 
